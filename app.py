@@ -13,12 +13,14 @@ from groq import Groq
 from huggingface_hub import hf_hub_download
 import os
 
+# Page config
 st.set_page_config(
     page_title="IMD Climate Fake News Detector",
     page_icon="🌦️",
     layout="wide"
 )
 
+# ─── SESSION STATE INIT ───────────────────────────────────────────────────────
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = ""
 if "page" not in st.session_state:
@@ -26,6 +28,7 @@ if "page" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = []
 
+# ─── PAGE 1: API KEY LANDING PAGE ─────────────────────────────────────────────
 def api_key_page():
     st.markdown("""
         <div style='text-align:center; padding: 60px 0 20px 0;'>
@@ -33,12 +36,13 @@ def api_key_page():
             <p style='font-size:18px; color:gray;'>Check climate claims against IMD reports (2008–2024) + live weather data</p>
         </div>
     """, unsafe_allow_html=True)
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("### 🔑 Enter your Groq API Key to get started")
         key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
         st.markdown("""
-            <small>Don't have a key? Get one free at
+            <small>Don't have a key? Get one free at 
             <a href='https://console.groq.com' target='_blank'>console.groq.com</a></small>
         """, unsafe_allow_html=True)
         st.markdown("")
@@ -49,6 +53,7 @@ def api_key_page():
                 st.rerun()
             else:
                 st.error("⚠️ Please enter a valid Groq API key!")
+
         st.markdown("---")
         st.markdown("**Built using:**")
         col_a, col_b = st.columns(2)
@@ -59,6 +64,7 @@ def api_key_page():
             st.markdown("- 🌐 Open-Meteo Live API")
             st.markdown("- 🦙 Groq Llama 3")
 
+# ─── LOAD MODELS ──────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer("sooriyajs/imd-sbert-finetuned")
@@ -82,6 +88,7 @@ def load_models():
     index = faiss.read_index(faiss_path)
     return embedder, nli_model, all_chunks, index
 
+# ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 def formalize_claim(raw_claim, client):
     prompt = f"""Convert this user input into a clear formal factual claim.
 Also extract: year mentioned (or null), location (or India), topic.
@@ -199,10 +206,14 @@ Write a short 2-3 sentence explanation. Be factual and cite the data."""
     )
     return response.choices[0].message.content.strip()
 
+# ─── PAGE 2: CLAIM VERIFICATION ───────────────────────────────────────────────
 def claim_verification_page(client):
     st.title("🔍 Claim Verification")
     st.markdown("Check any climate claim about India against IMD reports (2008–2024) + live weather data!")
+
     embedder, nli_model, all_chunks, index = load_models()
+
+    # Example claim buttons
     st.markdown("### 💡 Try these examples:")
     col1, col2 = st.columns(2)
     with col1:
@@ -215,12 +226,15 @@ def claim_verification_page(client):
             st.session_state.claim = "India had no rainfall in 2019"
         if st.button("2015 had worst heatwave in India"):
             st.session_state.claim = "2015 had worst heatwave in India"
+
+    # Claim input
     claim = st.text_area(
         "Enter your climate claim:",
         value=st.session_state.get("claim", ""),
         placeholder="e.g. 2020 was the hottest year in India",
         height=100
     )
+
     if st.button("✅ Check Claim", type="primary"):
         if claim.strip():
             with st.spinner("Analyzing claim..."):
@@ -228,15 +242,19 @@ def claim_verification_page(client):
                 formal = meta.get("formal_claim", claim)
                 year = meta.get("year")
                 location = meta.get("location", "India")
+
                 evidence = retrieve_evidence(formal, embedder, index, all_chunks, year_filter=year)
                 api_data = fetch_climate_data(year, location) if year else None
                 final_verdict, confidence, verdicts = multi_vote(formal, evidence, nli_model)
                 if confidence < 0.5:
                     final_verdict = "UNCERTAIN"
                 explanation = generate_explanation(formal, final_verdict, evidence, client, api_data)
+
+                # Results
                 st.markdown("---")
                 emoji = {"TRUE": "✅", "FAKE": "❌", "UNCERTAIN": "⚠️"}.get(final_verdict, "❓")
                 color = {"TRUE": "green", "FAKE": "red", "UNCERTAIN": "orange"}.get(final_verdict, "gray")
+
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown(f"### {emoji} Verdict: :{color}[{final_verdict}]")
@@ -245,11 +263,13 @@ def claim_verification_page(client):
                 with col2:
                     st.markdown("### 📝 Explanation")
                     st.write(explanation)
+
                 st.markdown("---")
                 st.markdown("### 📚 Evidence Used")
                 for v, s, chunk in verdicts:
                     with st.expander(f"[{chunk['year']}] {v} ({s:.0%})"):
                         st.write(chunk["text"][:300])
+
                 if api_data and api_data.get("status") == "success":
                     st.markdown("---")
                     st.markdown("### 🌡️ Live Climate Data")
@@ -257,6 +277,8 @@ def claim_verification_page(client):
                     c1.metric("Avg Max Temp", f"{api_data['avg_max_temp']}°C")
                     c2.metric("Avg Min Temp", f"{api_data['avg_min_temp']}°C")
                     c3.metric("Total Rainfall", f"{api_data['total_rain_mm']} mm")
+
+                # Save to history
                 st.session_state.history.append({
                     "claim": claim,
                     "verdict": final_verdict,
@@ -264,12 +286,16 @@ def claim_verification_page(client):
                 })
         else:
             st.error("Please enter a claim!")
+
+    # Verdict history
     if st.session_state.history:
         st.markdown("---")
         st.markdown("### 🕓 Verdict History")
         for h in reversed(st.session_state.history[-10:]):
             emoji = {"TRUE": "✅", "FAKE": "❌", "UNCERTAIN": "⚠️"}.get(h["verdict"], "❓")
             st.markdown(f"{emoji} `[{h['time']}]` **{h['verdict']}** — {h['claim'][:60]}")
+
+    # ── Feedback section inside Claim Verification page ──
     st.markdown("---")
     st.markdown("### 💬 Was this result helpful?")
     rating = st.slider("⭐ Rate this result", 1, 5, 3, key="quick_rating")
@@ -292,14 +318,34 @@ def claim_verification_page(client):
         else:
             st.error("Please write a comment before submitting!")
 
+    # ── Show all submitted feedbacks ──
+    if os.path.exists("feedback.txt"):
+        with open("feedback.txt", "r") as f:
+            lines = f.readlines()
+        if lines:
+            st.markdown("---")
+            st.markdown("### 📋 User Feedbacks")
+            for line in reversed(lines[-10:]):
+                parts = line.strip().split(" | ")
+                time_part = parts[0] if len(parts) > 0 else ""
+                rating_part = parts[1] if len(parts) > 1 else ""
+                comment_part = parts[2] if len(parts) > 2 else ""
+                stars_count = int(rating_part.replace("Rating: ", "").replace("/5", "")) if "Rating:" in rating_part else 3
+                stars_display = "⭐" * stars_count
+                st.markdown(f"{stars_display} **{rating_part}** — {comment_part} `{time_part}`")
+
+# ─── PAGE 3: FEEDBACK ─────────────────────────────────────────────────────────
 def feedback_page():
     st.title("💬 Feedback")
     st.markdown("We'd love to hear your thoughts on the IMD Climate Fake News Detector!")
+
     st.markdown("---")
     name = st.text_input("Your Name (optional)", placeholder="e.g. Durga")
-    rating = st.slider("⭐ Rate this app", 1, 5, 3, help="1 = Poor, 5 = Excellent")
+    rating = st.slider("⭐ Rate this app", 1, 5, 3,
+                       help="1 = Poor, 5 = Excellent")
     stars = "⭐" * rating
     st.markdown(f"Your rating: **{stars} ({rating}/5)**")
+
     category = st.selectbox("What is your feedback about?", [
         "Overall Experience",
         "Claim Verification Accuracy",
@@ -307,7 +353,9 @@ def feedback_page():
         "Speed / Performance",
         "Other"
     ])
+
     comment = st.text_area("Your Comments", placeholder="Tell us what you think...", height=150)
+
     if st.button("📨 Submit Feedback", type="primary"):
         if comment.strip() or rating:
             feedback_entry = (
@@ -323,32 +371,33 @@ def feedback_page():
             st.balloons()
         else:
             st.error("Please write a comment or give a rating before submitting!")
+
+    # Show existing feedback count
     if os.path.exists("feedback.txt"):
         with open("feedback.txt", "r") as f:
             lines = f.readlines()
         st.markdown(f"---\n*{len(lines)} people have submitted feedback so far!*")
 
+# ─── MAIN APP ─────────────────────────────────────────────────────────────────
 def main():
+    # If API key not set → show landing page
     if not st.session_state.groq_api_key:
         api_key_page()
         return
+
+    # API key is set → show main app with sidebar navigation
     client = Groq(api_key=st.session_state.groq_api_key)
+
     with st.sidebar:
-        st.markdown("## 🌦️ IMD Detector")
+        st.markdown("## 🕵️ Fake News Detector")
         st.markdown("---")
         page = st.radio("Navigate", ["🔍 Claim Verification", "💬 Feedback"])
-        st.markdown("---")
-        st.markdown("### About")
-        st.markdown("Built using:")
-        st.markdown("- IMD Annual Reports 2008–2024")
-        st.markdown("- Fine-tuned SBERT + DeBERTa")
-        st.markdown("- Open-Meteo Live API")
-        st.markdown("- Groq Llama 3")
         st.markdown("---")
         if st.button("🔄 Change API Key"):
             st.session_state.groq_api_key = ""
             st.session_state.page = "api_key"
             st.rerun()
+
     if page == "🔍 Claim Verification":
         claim_verification_page(client)
     elif page == "💬 Feedback":
