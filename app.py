@@ -15,7 +15,7 @@ import os
 
 # Page config
 st.set_page_config(
-    page_title="IMD Climate Fake News Detector",
+    page_title=" Fake News Detector",
     page_icon="🌦️",
     layout="wide"
 )
@@ -32,7 +32,7 @@ if "history" not in st.session_state:
 def api_key_page():
     st.markdown("""
         <div style='text-align:center; padding: 60px 0 20px 0;'>
-            <h1>🌦️ IMD Climate Fake News Detector</h1>
+            <h1>🌦️ Fake News Detector</h1>
             <p style='font-size:18px; color:gray;'>Check climate claims against IMD reports (2008–2024) + live weather data</p>
         </div>
     """, unsafe_allow_html=True)
