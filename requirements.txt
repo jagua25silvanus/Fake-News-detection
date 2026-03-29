@@ -1,0 +1,9 @@
+streamlit
+transformers
+sentence-transformers
+faiss-cpu
+groq
+requests
+huggingface_hub
+numpy
+torch
